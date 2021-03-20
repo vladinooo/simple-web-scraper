@@ -36,11 +36,8 @@ def scrape(region_unit_url, filename):
                 town_data["town_name"] = tr_element.find("td").find_next_sibling("td").text
                 town_url = "".join(base_url + tr_element.find("td").find_next_sibling("td").find_next_sibling("td")
                                    .find("a", href=True)["href"])
-                town_data["town_url"] = town_url
 
                 # data from town area page
-                area_data = {}
-
                 if "/ps33?" in town_url:
                     # town has multiple areas so go inside to get the data
                     response = requests.get(town_url)
@@ -49,30 +46,34 @@ def scrape(region_unit_url, filename):
                     content = parsed_html.find("div", {"id": "content"})
                     td_elements = content.find_all("td")
 
-                    area_urls = []
+                    area_code = 1
                     for td_element in td_elements:
                         try:
                             if td_element.find("a"):
-                                area_urls.append("".join(base_url + td_element.find("a", href=True)["href"]))
+                                town_data["area"] = area_code
+                                area_url = "".join(base_url + td_element.find("a", href=True)["href"])
+                                area_data = get_area_voting_data(area_url, town_data)
+                                region_voting_data.append(area_data.copy()) # uuuhh python references, take a copy!!
+                                area_code += 1
+                                print(area_data)
+                                print("\n")
                         except AttributeError:
                             pass
 
-                    # print("\n".join(area_urls))
-
                 else:
                     # town has only one area
-                    town_data = get_town_voting_data(town_url, town_data)
-
-                #print(town_data)
+                    town_data["area"] = 1
+                    region_voting_data.append(get_town_voting_data(town_url, town_data).copy())
+                    print(town_data)
+                    print("\n")
 
             except AttributeError:
                 pass
 
-            region_voting_data.append(town_data)
 
     #print(json.dumps(region_voting_data, indent=2))
     dataFrame = pandas.DataFrame(region_voting_data)
-    dataFrame.to_csv("region_voting_data.csv", encoding='utf-8-sig')
+    dataFrame.to_csv("region_voting_data.csv", encoding="utf-8-sig", index=False)
 
 
 def get_town_voting_data(town_url, town_data):
@@ -81,6 +82,31 @@ def get_town_voting_data(town_url, town_data):
     parsed_html = BeautifulSoup(content, 'html.parser')
     content = parsed_html.find("div", {"id": "content"})
     ps311_t1_element = content.find("table", {"id": "ps311_t1"})
+    town_data["voters"] = ps311_t1_element.find("td", {"headers": "sa2"}).text
+    town_data["envelopes"] = ps311_t1_element.find("td", {"headers": "sa3"}).text
+    town_data["legal_votes"] = ps311_t1_element.find("td", {"headers": "sa6"}).text
+
+    # get political parties
+    political_parties = []
+    political_party_tables = content.find("div", {"id": "inner"})
+    pp_tr_elements = political_party_tables.find_all("tr")
+
+    for pp_tr_element in pp_tr_elements:
+        try:
+            political_parties.append(pp_tr_element.find("td").find_next_sibling("td").text)
+        except AttributeError:
+            pass
+
+    town_data["political_parties"] = political_parties
+    return town_data
+
+
+def get_area_voting_data(area_url, town_data):
+    response = requests.get(area_url)
+    content = response.content
+    parsed_html = BeautifulSoup(content, 'html.parser')
+    content = parsed_html.find("div", {"id": "content"})
+    ps311_t1_element = content.find("table", {"id": "ps311_6_t1"})
     town_data["voters"] = ps311_t1_element.find("td", {"headers": "sa2"}).text
     town_data["envelopes"] = ps311_t1_element.find("td", {"headers": "sa3"}).text
     town_data["legal_votes"] = ps311_t1_element.find("td", {"headers": "sa6"}).text
